@@ -20,6 +20,7 @@ def cli():
     """
     My personal commands in the terminal.
     """
+    pass
 
 @cli.command("hello")
 @click.option('--name', default="World")
@@ -27,12 +28,12 @@ def hello(name):
     click.echo(f"Hello {name}!")
 
 @cli.command("date")
-@click.argument("format")
+@click.option("--format", default="%Y-%m-%d (%A)")
 def date(format):
     click.echo(datetime.now().strftime(format))
 
 @cli.command("time")
-@click.argument('format')
+@click.option("--format", default="%H:%M")
 def time(format):
     click.echo(datetime.now().strftime(format))
 
@@ -76,6 +77,7 @@ def volume():
         color = COLORS.get('gold')
     else:
         color = COLORS.get('green')
+
     click.echo(f"<span color='{color}'>{device}</span>{' mute' if status == 'off' else f'{vol:>3}%'}")
 
 @cli.command("battery")
@@ -90,7 +92,7 @@ def battery():
 
     if percent > 80:
         color = COLORS.get('green')
-    elif percent > 50:
+    elif percent > 20:
         color = COLORS.get('gold')
     else:
         color = COLORS.get('red')
@@ -99,4 +101,3 @@ def battery():
         color = COLORS.get('green')
 
     click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
-
