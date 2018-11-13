@@ -3,6 +3,7 @@ from datetime import datetime
 import psutil
 from subprocess import check_output
 import re
+import sh
 
 COLORS = {
     'black': '#011627',
@@ -77,8 +78,11 @@ def volume():
         color = COLORS.get('gold')
     else:
         color = COLORS.get('green')
+    
+    if status == 'off' or vol == 0:
+        color = COLORS.get('grey')
 
-    click.echo(f"<span color='{color}'>{device}</span>{' mute' if status == 'off' else f'{vol:>3}%'}")
+    click.echo(f"<span color='{color}'>{device}</span>{'' if status == 'off' else f'{vol:>3}%'}")
 
 @cli.command("battery")
 def battery():
@@ -101,3 +105,41 @@ def battery():
         color = COLORS.get('green')
 
     click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
+
+class GetLoginError(Exception):
+    pass
+
+def _get_logins(db, limit):
+    query = "select login from res_users order by id"
+    if limit:
+        query += f" limit {limit}" 
+    dbout = sh.psql("-l")
+    dbs = [re.split("\s*\|\s*", line.strip())[0] for line in re.split("\n", dbout.strip())[4:-6]]
+    if db in dbs:
+        result = sh.psql("-d", db, "-c", query)
+    elif f"oe_support_{db}" in dbs:
+        result = sh.psql("-d", f"oe_support_{db}", "-c", query)
+    else:
+        raise GetLoginError
+    return re.split("\n", result.strip())[2:-1]
+
+@cli.command('get-logins')
+@click.argument('db', metavar='<db>')
+@click.option('--limit', '-l', default=None, help="Limit to one if necessary.")
+def get_logins(db, limit):
+    """This command prints the logins of <db>."""
+    try:
+        logins = _get_logins(db, limit)
+        click.echo("\n".join(logins))
+    except GetLoginError:
+        click.echo(f"{db}{f' or oe_support_{db} ' if not db.startswith('oe_support') else ' '}doesn't exist.", err=True)        
+
+@cli.command('get-admin')
+@click.argument('db', metavar='<db>')
+def get_admin(db):
+    """This command prints the login of the admin of <db>."""
+    try:
+        admin = _get_logins(db, limit=1)[0]
+        click.echo(f"{admin}")
+    except GetLoginError:
+        click.echo(f"{db}{f' or oe_support_{db} ' if not db.startswith('oe_support') else ' '}doesn't exist.", err=True) 
