@@ -9,5 +9,10 @@ i3blocks.
 
 * [ ] monitor
 * [ ] network
-* [ ] font sizes
-* [ ] open incognito - here assign shortcuts to frequently used apps.
+* [X] ~~*font sizes*~~ [2018-11-13]
+* [ ] shortcuts to frequently used apps
+    * [ ] open incognito
+    * [ ] clipboard
+* [ ] odoo shortcuts
+    * [X] ~~*get user logins*~~ [2018-11-13]
+    * [ ] activate proper environment after checkout
