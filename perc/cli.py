@@ -4,6 +4,7 @@ import psutil
 from subprocess import check_output
 import re
 import sh
+import psycopg2
 
 COLORS = {
     'black': '#011627',
@@ -132,19 +133,25 @@ def keyboard_layout():
 class GetLoginsError(Exception):
     pass
 
+def list_database(db):
+    with psycopg2.connect("dbname=postgres").cursor() as cur:
+        cur.execute("select datname from pg_database;")
+        return [row[0] for row in cur.fetchall()]
+
 def _get_logins(db, limit):
     query = "select login from res_users order by id"
     if limit:
-        query += f" limit {limit}" 
-    dbout = sh.psql("-l")
-    dbs = [re.split("\s*\|\s*", line.strip())[0] for line in re.split("\n", dbout.strip())[4:-6]]
+        query += f" limit {limit}"
+    dbs = list_database(db)
     if db in dbs:
-        result = sh.psql("-d", db, "-c", query)
+        db = db
     elif f"oe_support_{db}" in dbs:
-        result = sh.psql("-d", f"oe_support_{db}", "-c", query)
+        db = f"oe_support_{db}"
     else:
-        raise GetLoginError
-    return re.split("\n", result.strip())[2:-1]
+        raise GetLoginsError(f"{db}{f' and oe_support_{db}' if not db.startswith('oe_support') else ''} don't exist.")
+    with psycopg2.connect(f"dbname={db}").cursor() as cur:
+        cur.execute(f"{query};")
+        return [row[0] for row in cur.fetchall()]
 
 @cli.command('get-logins')
 @click.argument('db', metavar='<db>')
@@ -154,8 +161,8 @@ def get_logins(db, limit):
     try:
         logins = _get_logins(db, limit)
         click.echo("\n".join(logins))
-    except GetLoginError:
-        click.echo(f"{db}{f' or oe_support_{db} ' if not db.startswith('oe_support') else ' '}doesn't exist.", err=True)        
+    except GetLoginsError as err:
+        click.echo(str(err), err=True)        
 
 @cli.command('get-admin')
 @click.argument('db', metavar='<db>')
@@ -164,5 +171,5 @@ def get_admin(db):
     try:
         admin = _get_logins(db, limit=1)[0]
         click.echo(f"{admin}")
-    except GetLoginError:
-        click.echo(f"{db}{f' or oe_support_{db} ' if not db.startswith('oe_support') else ' '}doesn't exist.", err=True) 
+    except GetLoginsError as err:
+        click.echo(str(err), err=True) 
