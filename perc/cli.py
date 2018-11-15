@@ -106,7 +106,30 @@ def battery():
 
     click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
 
-class GetLoginError(Exception):
+@cli.command("disk_usage")
+def disk_usage():
+    disk = psutil.disk_usage('/')
+
+    if disk.percent > 80:
+        color = COLORS.get('red')
+    elif disk.percent > 20:
+        color = COLORS.get('gold')
+    else:
+        color = COLORS.get('green')
+
+    free_gb = int(disk.free / (1024 ** 3))
+    total_gb = int(disk.total / (1024 ** 3))
+
+    click.echo(f"<span color='{color}'>DISK</span>{int(disk.percent):>3}% ({free_gb}gb)")    
+
+@cli.command("keyboard_layout")
+def keyboard_layout():
+    out = sh.setxkbmap('-query')
+    layout = re.split("\s+", re.split("\n", out.strip())[-1])[-1]
+    color = COLORS.get("green") if layout == "us" else COLORS.get("red")
+    click.echo(f"<span color='{color}'>{layout}</span>")
+
+class GetLoginsError(Exception):
     pass
 
 def _get_logins(db, limit):
