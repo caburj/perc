@@ -1,7 +1,7 @@
 import click
 from datetime import datetime
 import psutil
-from subprocess import check_output
+import subprocess
 import re
 import sh
 import psycopg2
@@ -63,13 +63,13 @@ def cpu():
 
 @cli.command("volume")
 def volume():
-    master = check_output(['amixer', 'get', 'Master'], universal_newlines=True)
+    master = subprocess.check_output(['amixer', 'get', 'Master'], universal_newlines=True)
     output = re.search('Mono: [A-z0-9\s]*\[([0-9]*)%\].*\[(on|off)\]', master)
     if output:
         status = output.group(2)
         vol = int(output.group(1))
 
-    headphone = check_output(['amixer', 'get', 'Headphone'], universal_newlines=True)
+    headphone = subprocess.check_output(['amixer', 'get', 'Headphone'], universal_newlines=True)
     headphone_status = re.search('Front Left: [A-z,0-9,\s]*\[([0-9]*)%\].*\[([a-z]*)\]', headphone).group(2)
 
     device = "HEADPHONE" if headphone_status == 'on' else "SPEAKER"
@@ -87,7 +87,7 @@ def volume():
 
 @cli.command("battery")
 def battery():
-    battery = check_output(['acpi', '-b'], universal_newlines=True)
+    battery = subprocess.check_output(['acpi', '-b'], universal_newlines=True)
     pattern = "Battery 0: (?P<state>\w*), (?P<percent>\d*)%, (?P<hour>\d\d)\:(?P<min>\d\d)\:\d\d remaining"
     output = re.search(pattern, battery)
     percent = int(output.group('percent'))
