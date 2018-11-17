@@ -5,6 +5,12 @@ import subprocess
 import re
 import sh
 import psycopg2
+from pathlib import Path
+import os
+import pyperclip
+import shlex
+import sys
+
 
 COLORS = {
     'black': '#011627',
@@ -16,6 +22,19 @@ COLORS = {
     'grey': '#7c7c7c',
     'gold': '#efc88b'
 }
+
+SUPPORT_TOOLS_DIR = Path('/home/odoo/support/support-tools')
+OE_SUPPORT = SUPPORT_TOOLS_DIR / "oe-support.py"
+ENVS_DIR = Path('/home/odoo/miniconda3/envs')
+DB_PREFIX = 'oe_support_'
+VERSION_MAP = {
+    8: ['8.0', 'saas-6'],
+    9: ['9.0'] + ['saas-%s' % se for se in [7, 8, 9, 10, 11]],
+    10: ['10.0'] + ['saas-%s' % se for se in [12, 13, 14, 15]],
+    11: ['11.0'] + ['saas-%s' % se for se in [11.1, 11.2, 11.3, 11.4]],
+    12: ['12.0'] + ['saas-%s' % se for se in [11.5]],
+}
+VERSION_MAP = {v: s for (s, vl) in VERSION_MAP.items() for v in vl}  # inverse the map for easier use
 
 @click.group()
 def cli():
@@ -130,25 +149,27 @@ def keyboard_layout():
     color = COLORS.get("green") if layout == "us" else COLORS.get("red")
     click.echo(f"<span color='{color}'>{layout}</span>")
 
-class GetLoginsError(Exception):
+class DBDoesntExistError(Exception):
     pass
 
-def list_database(db):
+def list_database():
     with psycopg2.connect("dbname=postgres").cursor() as cur:
         cur.execute("select datname from pg_database;")
         return [row[0] for row in cur.fetchall()]
 
+def db_name(db):
+    dbs = list_database()
+    if db in dbs:
+        return db
+    elif f"oe_support_{db}" in dbs:
+        return f"oe_support_{db}"
+    raise DBDoesntExistError(f"{db}{f' and oe_support_{db}' if not db.startswith('oe_support') else ''} don't exist.")
+
 def _get_logins(db, limit):
-    query = "select login from res_users order by id"
+    query = "select login from res_users where active order by id"
     if limit:
         query += f" limit {limit}"
-    dbs = list_database(db)
-    if db in dbs:
-        db = db
-    elif f"oe_support_{db}" in dbs:
-        db = f"oe_support_{db}"
-    else:
-        raise GetLoginsError(f"{db}{f' and oe_support_{db}' if not db.startswith('oe_support') else ''} don't exist.")
+    db = db_name(db)
     with psycopg2.connect(f"dbname={db}").cursor() as cur:
         cur.execute(f"{query};")
         return [row[0] for row in cur.fetchall()]
@@ -161,7 +182,7 @@ def get_logins(db, limit):
     try:
         logins = _get_logins(db, limit)
         click.echo("\n".join(logins))
-    except GetLoginsError as err:
+    except DBDoesntExistError as err:
         click.echo(str(err), err=True)        
 
 @cli.command('get-admin')
@@ -170,6 +191,65 @@ def get_admin(db):
     """This command prints the login of the admin of <db>."""
     try:
         admin = _get_logins(db, limit=1)[0]
+        pyperclip.copy(admin)
         click.echo(f"{admin}")
     except GetLoginsError as err:
-        click.echo(str(err), err=True) 
+        click.echo(str(err), err=True)
+
+def get_version(db):
+    """Return the version of the database in git compatible notation (i.e. 9.0, saas-11, etc.)."""
+    query = "select replace((regexp_matches(latest_version, '^\d+\.0|^saas~\d+\.\d+|saas~\d+'))[1], '~', '-') from ir_module_module where name='base'"
+    cmd = ['psql','-tAqX', '-d', '%s' % (db,), '-c', query]
+    try:
+        return subprocess.check_output(cmd).decode('utf-8').replace('\n','')
+    except subprocess.CalledProcessError:
+        logging.info("Database not present on system, how about you fetch it first, hum ?")
+        sys.exit(0)
+
+def db_exists(db):
+    dbs = list_database()
+    return f"oe_support_{db}" in dbs
+
+@cli.command('support')
+@click.argument('db', metavar='<db>')
+@click.option('--update', '-u', is_flag=True, help="Updates the base module. Useful when custom modules' states are set to 'to remove'.")
+@click.option('--vscode', '-v', is_flag=True, help="Debug using vscode. Don't forget to attach the process.")
+@click.option('--silent', '-s', is_flag=True, help="Do not show INFO messages in the log.")
+@click.option('--restore', '-r', is_flag=True, help="Restore the initial state of the <db>.")
+@click.option('--dump', '-d', type=click.Path(), help="Restore a given downloaded [sh] database to the given <db>.")
+@click.option('--info', '-i', is_flag=True, help="Shows the metadata of the <db>.")
+def support(db, silent, restore, update, vscode, dump, info):
+    if info:
+        show_info(db) 
+        return # terminate after showing the info
+    if dump:
+        load_dump(db, dump)
+    if not db_exists(db):
+        fetch(db)
+    start(db, silent, restore, update, vscode)
+
+
+def load_dump(db, dump_relative_path):
+    dump_path = Path.cwd() / dump_relative_path
+    cmd = shlex.split(f"{OE_SUPPORT} restore-dump {db} {dump_path.absolute()} --no-start")
+    try:
+        subprocess.check_call(cmd)
+    except Exception as err:
+        click.echo(str(err), err=True)
+    
+def show_info(db):
+    cmd = shlex.split(f"{OE_SUPPORT} info {db}")
+    subprocess.check_call(cmd)
+
+def fetch(db):
+    cmd = shlex.split(f"{OE_SUPPORT} fetch {db} --no-start")
+    subprocess.check_call(cmd)
+
+def get_python(db):
+    env = VERSION_MAP[get_version(f"{DB_PREFIX}{db}")]
+    python = ENVS_DIR / str(env) / 'bin/python'
+
+def start(db, silent, restor, update, vscode):
+    python = get_python(db)
+    cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} -- python {str(python)}")
+    subprocess.check_call(cmd)    
