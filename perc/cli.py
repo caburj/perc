@@ -43,22 +43,26 @@ def cli():
     """
     pass
 
-@cli.command("hello")
+@cli.group()
+def i3():
+    pass
+
+@i3.command("hello")
 @click.option('--name', default="World")
 def hello(name):
     click.echo(f"Hello {name}!")
 
-@cli.command("date")
+@i3.command("date")
 @click.option("--format", default="%Y-%m-%d (%A)")
 def date(format):
     click.echo(datetime.now().strftime(format))
 
-@cli.command("time")
+@i3.command("time")
 @click.option("--format", default="%H:%M")
 def time(format):
     click.echo(datetime.now().strftime(format))
 
-@cli.command("mem")
+@i3.command("mem")
 def mem():
     percent=int(psutil.virtual_memory().percent)
     if percent > 80:
@@ -69,7 +73,7 @@ def mem():
         color = COLORS.get('green')
     click.echo(f"<span color='{color}'>MEM</span><span color='{COLORS.get('white')}'>{percent:>3}%</span>")
 
-@cli.command("cpu")
+@i3.command("cpu")
 def cpu():
     percent=int(psutil.cpu_percent(interval=1))
     if percent > 80:
@@ -80,7 +84,7 @@ def cpu():
         color = COLORS.get('green')
     click.echo(f"<span color='{color}'>CPU</span><span color='{COLORS.get('white')}'>{percent:>3}%</span>")
 
-@cli.command("volume")
+@i3.command("volume")
 def volume():
     master = subprocess.check_output(['amixer', 'get', 'Master'], universal_newlines=True)
     output = re.search('Mono: [A-z0-9\s]*\[([0-9]*)%\].*\[(on|off)\]', master)
@@ -104,7 +108,7 @@ def volume():
 
     click.echo(f"<span color='{color}'>{device}</span>{'' if status == 'off' else f'{vol:>3}%'}")
 
-@cli.command("battery")
+@i3.command("battery")
 def battery():
     battery = subprocess.check_output(['acpi', '-b'], universal_newlines=True)
     pattern = "Battery 0: (?P<state>\w*), (?P<percent>\d*)%, (?P<hour>\d\d)\:(?P<min>\d\d)\:\d\d remaining"
@@ -126,7 +130,7 @@ def battery():
 
     click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
 
-@cli.command("disk_usage")
+@i3.command("disk_usage")
 def disk_usage():
     disk = psutil.disk_usage('/')
 
@@ -142,7 +146,7 @@ def disk_usage():
 
     click.echo(f"<span color='{color}'>DISK</span>{int(disk.percent):>3}% ({free_gb}gb)")    
 
-@cli.command("keyboard_layout")
+@i3.command("keyboard_layout")
 def keyboard_layout():
     out = sh.setxkbmap('-query')
     layout = re.split("\s+", re.split("\n", out.strip())[-1])[-1]
