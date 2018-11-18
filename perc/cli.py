@@ -112,7 +112,7 @@ def volume():
 @i3.command("battery")
 def battery():
     battery = subprocess.check_output(['acpi', '-b'], universal_newlines=True)
-    pattern = "Battery 0: (?P<state>\w*), (?P<percent>\d*)%, (?P<hour>\d\d)\:(?P<min>\d\d)\:\d\d remaining"
+    pattern = "Battery 0: (?P<state>\w*), (?P<percent>\d*)%, (?P<hour>\d\d)\:(?P<min>\d\d)\:\d\d [\w\s]+"
     output = re.search(pattern, battery)
     percent = int(output.group('percent'))
     state = output.group('state')
@@ -128,8 +128,9 @@ def battery():
 
     if state != 'Discharging':
         color = COLORS.get('green')
-
-    click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
+        click.echo(f"<span color='{color}'>CHARGING</span>{percent:>3}% ({hour}:{minute})")
+    else:
+        click.echo(f"<span color='{color}'>BAT</span>{percent:>3}% ({hour}:{minute})")
 
 @i3.command("disk_usage")
 def disk_usage():
