@@ -271,8 +271,12 @@ def get_python(db):
 
 def start(db, silent, restore, update, vscode):
     python = get_python(db)
-    cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
-    subprocess.check_call(cmd)    
+    server_cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
+    firefox_cmd = shlex.split(f"firefox http://localhost:8569/web?debug")
+    get_admin_cmd = shlex.split(f"perc support {db} --get-admin")
+    proc_list = [subprocess.Popen(cmd) for cmd in [server_cmd, firefox_cmd, get_admin_cmd]]
+    for proc in proc_list:
+        proc.wait()
 
 def show_logins(db, limit):
     """This command prints the logins of <db>."""
