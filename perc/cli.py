@@ -191,28 +191,6 @@ def _get_logins(db, limit):
         cur.execute(f"{query};")
         return [row[0] for row in cur.fetchall()]
 
-@cli.command('get-logins')
-@click.argument('db', metavar='<db>')
-@click.option('--limit', '-l', default=None, help="Limit to one if necessary.")
-def get_logins(db, limit):
-    """This command prints the logins of <db>."""
-    try:
-        logins = _get_logins(db, limit)
-        click.echo("\n".join(logins))
-    except DBDoesntExistError as err:
-        click.echo(str(err), err=True)        
-
-@cli.command('get-admin')
-@click.argument('db', metavar='<db>')
-def get_admin(db):
-    """This command prints the login of the admin of <db>."""
-    try:
-        admin = _get_logins(db, limit=1)[0]
-        pyperclip.copy(admin)
-        click.echo(f"{admin}")
-    except GetLoginsError as err:
-        click.echo(str(err), err=True)
-
 def get_version(db):
     """Return the version of the database in git compatible notation (i.e. 9.0, saas-11, etc.)."""
     query = "select replace((regexp_matches(latest_version, '^\d+\.0|^saas~\d+\.\d+|saas~\d+'))[1], '~', '-') from ir_module_module where name='base'"
@@ -252,8 +230,7 @@ def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dum
         load_dump(db, dump)
     if not db_exists(db):
         fetch(db)
-    start(db, silent, restore, update, vscode)
-
+    start(db, silent, restore, update, vscode)      
 
 def load_dump(db, dump_relative_path):
     dump_path = Path.cwd() / dump_relative_path
@@ -273,9 +250,26 @@ def fetch(db):
 
 def get_python(db):
     env = VERSION_MAP[get_version(f"{DB_PREFIX}{db}")]
-    python = ENVS_DIR / str(env) / 'bin/python'
+    return ENVS_DIR / str(env) / 'bin/python'
 
-def start(db, silent, restor, update, vscode):
+def start(db, silent, restore, update, vscode):
     python = get_python(db)
-    cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} -- python {str(python)}")
+    cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
     subprocess.check_call(cmd)    
+
+def show_logins(db, limit):
+    """This command prints the logins of <db>."""
+    try:
+        logins = _get_logins(db, limit)
+        click.echo("\n".join(logins))
+    except DBDoesntExistError as err:
+        click.echo(str(err), err=True)        
+
+def show_admin(db):
+    """This command prints the login of the admin of <db>."""
+    try:
+        admin = _get_logins(db, limit=1)[0]
+        pyperclip.copy(admin)
+        click.echo(f"{admin}")
+    except DBDoesntExistError as err:
+        click.echo(str(err), err=True)
