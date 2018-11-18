@@ -37,7 +37,8 @@ VERSION_MAP = {
 VERSION_MAP = {v: s for (s, vl) in VERSION_MAP.items() for v in vl}  # inverse the map for easier use
 
 @click.group()
-def cli():
+@click.pass_context
+def cli(ctx):
     """
     My personal commands in the terminal.
     """
