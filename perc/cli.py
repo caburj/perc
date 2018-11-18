@@ -155,6 +155,17 @@ def keyboard_layout():
     color = COLORS.get("green") if layout == "us" else COLORS.get("red")
     click.echo(f"<span color='{color}'>{layout}</span>")
 
+@cli.command("change-lockscreen")
+@click.option("-r", "--resolution", help="Resolution (3520x1080 default)")
+@click.option("-d", "--wallpapers-dir")
+def change_lockscreen(resolution, wallpapers_dir):
+    if not wallpapers_dir:
+        wallpapers_dir = "/home/odoo/Wallpapers"
+    if not resolution:
+        resolution = "3520x1080"
+    cmd = f"betterlockscreen -u {wallpapers_dir} -r {resolution}"
+    subprocess.check_call(shlex.split(cmd))
+
 class DBDoesntExistError(Exception):
     pass
 
