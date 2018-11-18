@@ -227,18 +227,27 @@ def db_exists(db):
     dbs = list_database()
     return f"oe_support_{db}" in dbs
 
-@cli.command('support')
+@cli.command("support")
 @click.argument('db', metavar='<db>')
+@click.option('--get-logins', is_flag=True)
+@click.option('--get-admin', is_flag=True)
 @click.option('--update', '-u', is_flag=True, help="Updates the base module. Useful when custom modules' states are set to 'to remove'.")
 @click.option('--vscode', '-v', is_flag=True, help="Debug using vscode. Don't forget to attach the process.")
 @click.option('--silent', '-s', is_flag=True, help="Do not show INFO messages in the log.")
 @click.option('--restore', '-r', is_flag=True, help="Restore the initial state of the <db>.")
 @click.option('--dump', '-d', type=click.Path(), help="Restore a given downloaded [sh] database to the given <db>.")
 @click.option('--info', '-i', is_flag=True, help="Shows the metadata of the <db>.")
-def support(db, silent, restore, update, vscode, dump, info):
+@click.pass_context
+def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dump, info):
+    if get_logins:
+        show_logins(db, None)
+        return
+    if get_admin:
+        show_admin(db)
+        return
     if info:
         show_info(db) 
-        return # terminate after showing the info
+        return
     if dump:
         load_dump(db, dump)
     if not db_exists(db):
