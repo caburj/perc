@@ -48,7 +48,7 @@ def cli(ctx):
 def i3():
     pass
 
-@i3.command("hello")
+@cli.command("hello")
 @click.option('--name', default="World")
 def hello(name):
     click.echo(f"Hello {name}!")
@@ -191,6 +191,23 @@ def _get_logins(db, limit):
         cur.execute(f"{query};")
         return [row[0] for row in cur.fetchall()]
 
+def _get_admin(db):
+    admin_id_query = "select res_id from ir_model_data where module = 'base' and name = 'user_admin';"
+    root_id_query = "select res_id from ir_model_data where module = 'base' and name = 'user_root';"
+    login_query = "select login from res_users where id = {}"
+    db = db_name(db)
+    with psycopg2.connect(f"dbname={db}").cursor() as cur:
+        # TODO refactor by determining the db version
+        cur.execute(admin_id_query)
+        admin = cur.fetchall()
+        if len(admin)==1:
+            cur.execute(login_query.format(admin[0][0]))
+            return cur.fetchall()[0][0]
+        cur.execute(root_id_query)
+        root = cur.fetchall()
+        cur.execute(login_query.format(root[0][0]))
+        return cur.fetchall()[0][0]
+
 def get_version(db):
     """Return the version of the database in git compatible notation (i.e. 9.0, saas-11, etc.)."""
     query = "select replace((regexp_matches(latest_version, '^\d+\.0|^saas~\d+\.\d+|saas~\d+'))[1], '~', '-') from ir_module_module where name='base'"
@@ -230,7 +247,7 @@ def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dum
         load_dump(db, dump)
     if not db_exists(db):
         fetch(db)
-    start(db, silent, restore, update, vscode)      
+    start(db, silent, restore, update, vscode)
 
 def load_dump(db, dump_relative_path):
     dump_path = Path.cwd() / dump_relative_path
@@ -268,7 +285,7 @@ def show_logins(db, limit):
 def show_admin(db):
     """This command prints the login of the admin of <db>."""
     try:
-        admin = _get_logins(db, limit=1)[0]
+        admin = _get_admin(db)
         pyperclip.copy(admin)
         click.echo(f"{admin}")
     except DBDoesntExistError as err:
