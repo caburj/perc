@@ -23,8 +23,15 @@ COLORS = {
     'gold': '#efc88b'
 }
 
-SUPPORT_TOOLS_DIR = Path('/home/odoo/support/support-tools')
+SUPPORT_DIR = Path("/home/odoo/support")
+SUPPORT_TOOLS_DIR = SUPPORT_DIR / "support-tools"
+SRC_DIR =  SUPPORT_DIR / "src"
+ODOO_DIR = SRC_DIR / "odoo"
+ENTERPRISE_DIR = SRC_DIR / "enterprise"
+DESIGN_THEMES_DIR = SRC_DIR / "design-themes"
+INTERNAL_DIR = SUPPORT_DIR / "internal"
 OE_SUPPORT = SUPPORT_TOOLS_DIR / "oe-support.py"
+ODOO = lambda version: ODOO_DIR / ("odoo.py" if version <= 9 else "odoo-bin")
 ENVS_DIR = Path('/home/odoo/miniconda3/envs')
 DB_PREFIX = 'oe_support_'
 VERSION_MAP = {
@@ -220,7 +227,7 @@ def get_version(db):
 
 def db_exists(db):
     dbs = list_database()
-    return f"oe_support_{db}" in dbs
+    return f"oe_support_{db}" in dbs or db in dbs
 
 @cli.command("support")
 @click.argument('db', metavar='<db>')
@@ -232,8 +239,9 @@ def db_exists(db):
 @click.option('--restore', '-r', is_flag=True, help="Restore the initial state of the <db>.")
 @click.option('--dump', '-d', type=click.Path(), help="Restore a given downloaded [sh] database to the given <db>.")
 @click.option('--info', '-i', is_flag=True, help="Shows the metadata of the <db>.")
+@click.option('--copy-command', '-c', is_flag=True, help="Copies the command to the clipboard.")
 @click.pass_context
-def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dump, info):
+def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dump, info, copy_command):
     if get_logins:
         show_logins(db, None)
         return
@@ -247,7 +255,7 @@ def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dum
         load_dump(db, dump)
     if not db_exists(db):
         fetch(db)
-    start(db, silent, restore, update, vscode)
+    start(db, silent, restore, update, vscode, copy_command)
 
 def load_dump(db, dump_relative_path):
     dump_path = Path.cwd() / dump_relative_path
@@ -266,13 +274,20 @@ def fetch(db):
     subprocess.check_call(cmd)
 
 def get_python(db):
-    env = VERSION_MAP[get_version(f"{DB_PREFIX}{db}")]
+    env = VERSION_MAP[get_version(db)]
     return ENVS_DIR / str(env) / 'bin/python'
 
-def start(db, silent, restore, update, vscode):
-    python = get_python(db)
-    server_cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
-    firefox_cmd = shlex.split(f"firefox http://localhost:8569/web/login?debug")
+def start(db, silent, restore, update, vscode, copy_command):
+    if db_name(db).startswith("oe_support_"):
+        python = get_python(f"{DB_PREFIX}{db}")
+        server_cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
+        firefox_cmd = shlex.split(f"firefox http://localhost:8569/web/login?debug")
+    else:
+        server_cmd = test_db_command(db, update, vscode)
+        firefox_cmd = shlex.split(f"firefox http://localhost:8069/web/login?debug")
+    if copy_command:
+        pyperclip.copy(" ".join(server_cmd))
+        return
     get_admin_cmd = shlex.split(f"perc support {db} --get-admin")
     proc_list = [subprocess.Popen(cmd) for cmd in [server_cmd, firefox_cmd, get_admin_cmd]]
     for proc in proc_list:
@@ -294,3 +309,11 @@ def show_admin(db):
         click.echo(f"{admin}")
     except DBDoesntExistError as err:
         click.echo(str(err), err=True)
+
+def test_db_command(db, update, vscode):
+    python_script = [f"{get_python(db)}"] + (vscode and "-m ptvsd --host localhost --port 5678".split(" ") or [])
+    odoo_script = [f"{ODOO(VERSION_MAP[get_version(db)])}"]
+    default_options = f"--xmlrpc-port=8069 --max-cron-threads=0 --load=saas_worker,web --db-filter=^{db}$".split(" ")
+    addons_path_option = ["--addons-path=/home/odoo/support/src/enterprise,/home/odoo/support/src/design-themes,/home/odoo/support/internal/default,/home/odoo/support/internal/trial,/home/odoo/support/src/odoo/addons"]
+    db_options = f"-d {db}".split(" ") + (update and "-u base".split(" ") or [])
+    return python_script + odoo_script + addons_path_option + default_options + db_options 

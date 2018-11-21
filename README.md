@@ -25,3 +25,5 @@ i3blocks.
         - choose the correct python to run.
     * [ ] remove prefix by adding no-prefix option
     * [X] ~~*adapt restore-dump*~~ [2018-11-17]
+    * [X] ~~*shortcut odoo-bin for local database*~~ [2018-11-21]
+    * [ ] shortcut to install all modules locally
