@@ -27,3 +27,5 @@ i3blocks.
     * [X] ~~*adapt restore-dump*~~ [2018-11-17]
     * [X] ~~*shortcut odoo-bin for local database*~~ [2018-11-21]
     * [ ] shortcut to install all modules locally
+    * [ ] code to fetch from perc support
+    * [ ] create new test db instance

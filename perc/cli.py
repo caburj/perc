@@ -10,6 +10,14 @@ import os
 import pyperclip
 import shlex
 import sys
+import logging
+
+# import ptvsd
+
+# # 5678 is the default attach port in the VS Code debug configurations
+# print("Waiting for debugger attach")
+# ptvsd.enable_attach(address=('localhost', 5679), redirect_output=True)
+# ptvsd.wait_for_attach()
 
 
 COLORS = {
@@ -183,11 +191,10 @@ def list_database():
 
 def db_name(db):
     dbs = list_database()
-    if db in dbs:
-        return db
-    elif f"oe_support_{db}" in dbs:
+    if f"oe_support_{db}" in dbs:
         return f"oe_support_{db}"
-    raise DBDoesntExistError(f"{db}{f' and oe_support_{db}' if not db.startswith('oe_support') else ''} don't exist.")
+    return db
+    # raise DBDoesntExistError(f"{db}{f' and oe_support_{db}' if not db.startswith('oe_support') else ''} don't exist.")
 
 def _get_logins(db, limit):
     query = "select login from res_users where active order by id"
@@ -240,8 +247,12 @@ def db_exists(db):
 @click.option('--dump', '-d', type=click.Path(), help="Restore a given downloaded [sh] database to the given <db>.")
 @click.option('--info', '-i', is_flag=True, help="Shows the metadata of the <db>.")
 @click.option('--copy-command', '-c', is_flag=True, help="Copies the command to the clipboard.")
+@click.option('--port', '-p', type=str)
+@click.option('--fetch', is_flag=True, help="Fetch new database.")
+@click.option('--shell', is_flag=True, help="Run shell instance on the given db.")
+@click.option('--init', help="Initialize a database.")
 @click.pass_context
-def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dump, info, copy_command):
+def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dump, info, copy_command, port, fetch, shell, init):
     if get_logins:
         show_logins(db, None)
         return
@@ -253,9 +264,9 @@ def support(ctx, db, get_logins, get_admin, silent, restore, update, vscode, dum
         return
     if dump:
         load_dump(db, dump)
-    if not db_exists(db):
-        fetch(db)
-    start(db, silent, restore, update, vscode, copy_command)
+    if not db_exists(db) and not init:
+        fetch_cmd(db)
+    start(db, silent, restore, update, vscode, copy_command, port, fetch, shell, init)
 
 def load_dump(db, dump_relative_path):
     dump_path = Path.cwd() / dump_relative_path
@@ -269,27 +280,30 @@ def show_info(db):
     cmd = shlex.split(f"{OE_SUPPORT} info {db}")
     subprocess.check_call(cmd)
 
-def fetch(db):
+def fetch_cmd(db):
     cmd = shlex.split(f"{OE_SUPPORT} fetch {db} --no-start")
     subprocess.check_call(cmd)
 
-def get_python(db):
-    env = VERSION_MAP[get_version(db)]
-    return ENVS_DIR / str(env) / 'bin/python'
+def get_python(db, version=None):
+    if not version:
+        version = get_version(db)
+    return ENVS_DIR / str(version) / 'bin/python'
 
-def start(db, silent, restore, update, vscode, copy_command):
+def start(db, silent, restore, update, vscode, copy_command, port, fetch, shell, init):
     if db_name(db).startswith("oe_support_"):
         python = get_python(f"{DB_PREFIX}{db}")
-        server_cmd = shlex.split(f"{OE_SUPPORT} {'restore' if restore else 'start'} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--debug' if silent else ''} --python {str(python)}")
-        firefox_cmd = shlex.split(f"firefox http://localhost:8569/web/login?debug")
+        subcommand = fetch and "fetch" or f"{'restore' if restore else 'start'}"
+        server_cmd = shlex.split(f"{OE_SUPPORT} {subcommand} {db} {'--update' if update else ''} {'--vscode' if vscode else ''} {'--shell' if shell else ''} {'--debug' if silent else ''} --python {str(python)}")
+        chrome_cmd = shlex.split(f"google-chrome http://localhost:8569/web/login?debug")
     else:
-        server_cmd = test_db_command(db, update, vscode)
-        firefox_cmd = shlex.split(f"firefox http://localhost:8069/web/login?debug")
+        server_cmd = test_db_command(db, update, vscode, port, shell, init)
+        chrome_cmd = shlex.split(f"google-chrome http://localhost:{port or '8069'}/web/login")
     if copy_command:
         pyperclip.copy(" ".join(server_cmd))
         return
-    get_admin_cmd = shlex.split(f"perc support {db} --get-admin")
-    proc_list = [subprocess.Popen(cmd) for cmd in [server_cmd, firefox_cmd, get_admin_cmd]]
+    if not init:
+        get_admin_cmd = shlex.split(f"perc support {db} --get-admin")
+    proc_list = [subprocess.Popen(cmd) for cmd in [server_cmd, get_admin_cmd] + (not shell and [chrome_cmd] or [])]
     for proc in proc_list:
         proc.wait()
 
@@ -310,10 +324,19 @@ def show_admin(db):
     except DBDoesntExistError as err:
         click.echo(str(err), err=True)
 
-def test_db_command(db, update, vscode):
-    python_script = [f"{get_python(db)}"] + (vscode and "-m ptvsd --host localhost --port 5678".split(" ") or [])
-    odoo_script = [f"{ODOO(VERSION_MAP[get_version(db)])}"]
-    default_options = f"--xmlrpc-port=8069 --max-cron-threads=0 --load=saas_worker,web --db-filter=^{db}$".split(" ")
-    addons_path_option = ["--addons-path=/home/odoo/support/src/enterprise,/home/odoo/support/src/design-themes,/home/odoo/support/internal/default,/home/odoo/support/internal/trial,/home/odoo/support/src/odoo/addons"]
+def test_db_command(db, update, vscode, port, shell, init):
+    if not init:
+        version = get_version(db)
+    else:
+        version = init
+    python_script = [f"{get_python(db, version)}"] + (vscode and "-m ptvsd --host localhost --port 5678".split(" ") or [])
+    odoo_script = [f"{get_odoo_script(version)}"] + (shell and ['shell'] or [])
+    default_options = f"--xmlrpc-port={port or '8069'} --max-cron-threads=0 --load=saas_worker,web --db-filter=^{db}$".split(" ")
+    addons_path_option = [f"--addons-path=/home/odoo/support/src/{version}/enterprise,/home/odoo/support/src/{version}/design-themes,/home/odoo/support/internal/default,/home/odoo/support/internal/trial,/home/odoo/support/src/{version}/odoo/addons"]
     db_options = f"-d {db}".split(" ") + (update and "-u base".split(" ") or [])
-    return python_script + odoo_script + addons_path_option + default_options + db_options 
+    return python_script + odoo_script + addons_path_option + default_options + db_options
+
+def get_odoo_script(version):
+    serie = VERSION_MAP[version]
+    odoobin = "odoo.py" if serie <= 9.0 else "odoo-bin"
+    return SRC_DIR / version / "odoo" / odoobin
